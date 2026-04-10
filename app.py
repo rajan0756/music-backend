@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 app = Flask(__name__)
-CORS(app)  # allows React frontend to call this API
+CORS(app, origins=["https://music-frontend-jade.vercel.app"])  # allows React frontend to call this API
 
 # ─────────────────────────────────────────────
 # AUDIO FEATURES & GENRE GROUPS
