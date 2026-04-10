@@ -56,7 +56,7 @@ def get_genre_group(genre):
 # ─────────────────────────────────────────────
 
 print("⏳ Loading dataset...")
-df = pd.read_csv("spotify_tracks.csv")
+df = pd.read_csv("tracks_clean.csv")
 df = df.dropna(subset=AUDIO_FEATURES + ["track_name", "artists"])
 df = df.drop_duplicates(subset=["track_name", "artists"])
 df = df.reset_index(drop=True)
