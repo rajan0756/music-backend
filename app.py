@@ -16,10 +16,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 app = Flask(__name__)
-CORS(app, origins="*")  # allows React frontend to call this API
+CORS(app, origins="*")
 
 # ─────────────────────────────────────────────
-# AUDIO FEATURES & GENRE GROUPS
+# AUDIO FEATURES & GENRE/LANGUAGE GROUPS
 # ─────────────────────────────────────────────
 
 AUDIO_FEATURES = [
@@ -41,6 +41,21 @@ GENRE_GROUPS = {
     "country":    ["country", "bluegrass", "folk", "acoustic"],
 }
 
+# Language detection based on genre
+LANGUAGE_MAP = {
+    "indian":     "hindi",
+    "asian-pop":  "asian",
+    "latin":      "spanish",
+    "pop":        "english",
+    "rock":       "english",
+    "hiphop":     "english",
+    "electronic": "english",
+    "classical":  "instrumental",
+    "jazz":       "english",
+    "metal":      "english",
+    "country":    "english",
+}
+
 def get_genre_group(genre):
     if not isinstance(genre, str):
         return "other"
@@ -50,9 +65,12 @@ def get_genre_group(genre):
             return group
     return genre
 
+def get_language(genre_group):
+    return LANGUAGE_MAP.get(genre_group, "other")
+
 
 # ─────────────────────────────────────────────
-# LOAD DATASET ONCE WHEN SERVER STARTS
+# LOAD DATASET
 # ─────────────────────────────────────────────
 
 print("⏳ Loading dataset...")
@@ -64,6 +82,7 @@ df = df.reset_index(drop=True)
 scaler = MinMaxScaler()
 df[AUDIO_FEATURES] = scaler.fit_transform(df[AUDIO_FEATURES])
 df["genre_group"] = df["track_genre"].apply(get_genre_group)
+df["language"]    = df["genre_group"].apply(get_language)
 
 print(f"✅ Dataset ready: {len(df):,} tracks loaded\n")
 
@@ -79,36 +98,25 @@ def home():
 
 @app.route("/search", methods=["GET"])
 def search():
-    """
-    Search for songs by name.
-    GET /search?q=tera fitoor
-    Returns list of matching songs.
-    """
     query = request.args.get("q", "").strip()
     if not query:
         return jsonify({"error": "Please provide a search query"}), 400
 
     mask = df["track_name"].str.lower().str.contains(query.lower(), na=False)
-    results = df[mask][["track_name", "artists", "track_genre", "popularity"]].head(8)
+    results = df[mask][["track_name", "artists", "track_genre", "popularity", "language"]].head(8)
 
     if results.empty:
         return jsonify({"results": [], "message": "No songs found"})
 
-    return jsonify({
-        "results": results.to_dict(orient="records")
-    })
+    return jsonify({"results": results.to_dict(orient="records")})
 
 
 @app.route("/recommend", methods=["GET"])
 def recommend():
-    """
-    Get recommendations for a song.
-    GET /recommend?track=Tera Fitoor&artist=Arijit Singh&n=10
-    Returns top N similar songs.
-    """
-    track_name  = request.args.get("track", "").strip()
-    artist_name = request.args.get("artist", "").strip()
-    top_n       = int(request.args.get("n", 10))
+    track_name   = request.args.get("track", "").strip()
+    artist_name  = request.args.get("artist", "").strip()
+    top_n        = int(request.args.get("n", 10))
+    same_lang    = request.args.get("same_language", "true").lower() == "true"
 
     if not track_name or not artist_name:
         return jsonify({"error": "Please provide both track and artist"}), 400
@@ -126,13 +134,24 @@ def recommend():
     idx  = matches.index[0]
     seed = df.loc[idx]
     seed_genre_group = seed["genre_group"]
+    seed_language    = seed["language"]
 
-    # Filter to genre pool
-    pool = df[df["genre_group"] == seed_genre_group].copy()
+    # Filter pool by genre group AND language
+    if same_lang:
+        pool = df[
+            (df["genre_group"] == seed_genre_group) &
+            (df["language"] == seed_language)
+        ].copy()
+    else:
+        pool = df[df["genre_group"] == seed_genre_group].copy()
+
+    # Fallback if pool too small
+    if len(pool) < top_n + 5:
+        pool = df[df["language"] == seed_language].copy()
     if len(pool) < top_n + 5:
         pool = df.copy()
 
-    # Compute cosine similarity
+    # Cosine similarity
     seed_vector  = df.loc[[idx], AUDIO_FEATURES].values
     pool_vectors = pool[AUDIO_FEATURES].values
     scores = cosine_similarity(seed_vector, pool_vectors)[0]
@@ -143,7 +162,7 @@ def recommend():
     pool = pool.sort_values("_score", ascending=False).head(top_n)
 
     recommendations = pool[[
-        "track_name", "artists", "track_genre", "popularity"
+        "track_name", "artists", "track_genre", "popularity", "language"
     ]].copy()
     recommendations.insert(0, "similarity_score", pool["_score"].round(4).values)
 
@@ -153,13 +172,14 @@ def recommend():
             "artists":    seed["artists"],
             "genre":      seed.get("track_genre", "N/A"),
             "popularity": int(seed.get("popularity", 0)),
+            "language":   seed_language,
         },
         "recommendations": recommendations.to_dict(orient="records")
     })
 
 
 # ─────────────────────────────────────────────
-# RUN SERVER
+# RUN
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
