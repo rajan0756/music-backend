@@ -39,10 +39,12 @@ GENRE_GROUPS = {
     "latin":      ["latin", "salsa", "reggaeton", "samba", "bossa-nova", "spanish"],
     "metal":      ["metal", "heavy-metal", "death-metal", "black-metal"],
     "country":    ["country", "bluegrass", "folk", "acoustic"],
+     "indian-hiphop": ["desi-hip-hop", "desi hip hop", "punjabi"],
 }
 
 # Language detection based on genre
 LANGUAGE_MAP = {
+    "indian-hiphop": "hindi",
     "indian":     "hindi",
     "asian-pop":  "asian",
     "latin":      "spanish",
@@ -70,9 +72,11 @@ def get_language(genre_group):
 INDIAN_ARTISTS = [
     "ap dhillon", "sidhu", "shubh", "diljit", "arijit", "atif",
     "jubin", "badshah", "yo yo honey singh", "guru randhawa",
-    "shreya ghoshal", "neha kakkar", "tegi pannu", "manni sandhu"
+    "shreya ghoshal", "neha kakkar", "tegi pannu", "manni sandhu",
+    "satinder sartaaj", "ammy virk", "hardy sandhu", "jasmine sandlas",
+    "b praak", "jaani", "parmish verma", "karan aujla", "jordan sandhu",
+    "surjit bindrakhia", "gippy grewal", "jazzy b", "miss pooja"
 ]
-
 def fix_language(row):
     lang = get_language(row["genre_group"])
     artist = str(row["artists"]).lower()
