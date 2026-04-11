@@ -39,12 +39,9 @@ GENRE_GROUPS = {
     "latin":      ["latin", "salsa", "reggaeton", "samba", "bossa-nova", "spanish"],
     "metal":      ["metal", "heavy-metal", "death-metal", "black-metal"],
     "country":    ["country", "bluegrass", "folk", "acoustic"],
-     "indian-hiphop": ["desi-hip-hop", "desi hip hop", "punjabi"],
 }
 
-# Language detection based on genre
 LANGUAGE_MAP = {
-    "indian-hiphop": "hindi",
     "indian":     "hindi",
     "asian-pop":  "asian",
     "latin":      "spanish",
@@ -58,6 +55,15 @@ LANGUAGE_MAP = {
     "country":    "english",
 }
 
+INDIAN_ARTISTS = [
+    "ap dhillon", "sidhu", "shubh", "diljit", "arijit", "atif",
+    "jubin", "badshah", "yo yo honey singh", "guru randhawa",
+    "shreya ghoshal", "neha kakkar", "tegi pannu", "manni sandhu",
+    "satinder sartaaj", "ammy virk", "hardy sandhu", "jasmine sandlas",
+    "b praak", "jaani", "parmish verma", "karan aujla", "jordan sandhu",
+    "surjit bindrakhia", "gippy grewal", "jazzy b", "miss pooja"
+]
+
 def get_genre_group(genre):
     if not isinstance(genre, str):
         return "other"
@@ -69,14 +75,7 @@ def get_genre_group(genre):
 
 def get_language(genre_group):
     return LANGUAGE_MAP.get(genre_group, "other")
-INDIAN_ARTISTS = [
-    "ap dhillon", "sidhu", "shubh", "diljit", "arijit", "atif",
-    "jubin", "badshah", "yo yo honey singh", "guru randhawa",
-    "shreya ghoshal", "neha kakkar", "tegi pannu", "manni sandhu",
-    "satinder sartaaj", "ammy virk", "hardy sandhu", "jasmine sandlas",
-    "b praak", "jaani", "parmish verma", "karan aujla", "jordan sandhu",
-    "surjit bindrakhia", "gippy grewal", "jazzy b", "miss pooja"
-]
+
 def fix_language(row):
     lang = get_language(row["genre_group"])
     artist = str(row["artists"]).lower()
@@ -98,7 +97,7 @@ df = df.reset_index(drop=True)
 scaler = MinMaxScaler()
 df[AUDIO_FEATURES] = scaler.fit_transform(df[AUDIO_FEATURES])
 df["genre_group"] = df["track_genre"].apply(get_genre_group)
-df["language"] = df.apply(fix_language, axis=1)
+df["language"]    = df.apply(fix_language, axis=1)
 
 print(f"✅ Dataset ready: {len(df):,} tracks loaded\n")
 
@@ -129,10 +128,10 @@ def search():
 
 @app.route("/recommend", methods=["GET"])
 def recommend():
-    track_name   = request.args.get("track", "").strip()
-    artist_name  = request.args.get("artist", "").strip()
-    top_n        = int(request.args.get("n", 10))
-    same_lang    = request.args.get("same_language", "true").lower() == "true"
+    track_name  = request.args.get("track", "").strip()
+    artist_name = request.args.get("artist", "").strip()
+    top_n       = int(request.args.get("n", 10))
+    same_lang   = request.args.get("same_language", "true").lower() == "true"
 
     if not track_name or not artist_name:
         return jsonify({"error": "Please provide both track and artist"}), 400
@@ -147,12 +146,15 @@ def recommend():
     if matches.empty:
         return jsonify({"error": f"Track '{track_name}' by '{artist_name}' not found"}), 404
 
-    idx  = matches.index[0]
-    seed = df.loc[idx]
+    idx              = matches.index[0]
+    seed             = df.loc[idx]
     seed_genre_group = seed["genre_group"]
     seed_language    = seed["language"]
+    seed_valence     = seed["valence"]
+    seed_acousticness= seed["acousticness"]
+    seed_energy      = seed["energy"]
 
-    # Filter pool by genre group AND language
+    # Filter pool by language
     if same_lang:
         pool = df[
             (df["genre_group"] == seed_genre_group) &
@@ -167,34 +169,27 @@ def recommend():
     if len(pool) < top_n + 5:
         pool = df.copy()
 
-    # Cosine similarity
+    # Compute cosine similarity
     seed_vector  = df.loc[[idx], AUDIO_FEATURES].values
     pool_vectors = pool[AUDIO_FEATURES].values
     scores = cosine_similarity(seed_vector, pool_vectors)[0]
 
     pool = pool.copy()
     pool["_score"] = scores
-pool = pool[pool.index != idx]
-
-# Strict mood filter — only songs with similar valence and acousticness
-seed_valence      = df.loc[idx, "valence"]
-seed_acousticness = df.loc[idx, "acousticness"]
-seed_energy       = df.loc[idx, "energy"]
-
-pool = pool[
-    (abs(pool["valence"]      - seed_valence)      < 0.15) &
-    (abs(pool["acousticness"] - seed_acousticness) < 0.20) &
-    (abs(pool["energy"]       - seed_energy)       < 0.20)
-]
-
-# Fallback if too few results
-if len(pool) < top_n:
-    pool = df[pool.index != idx].copy() if False else df.copy()
     pool = pool[pool.index != idx]
-    pool["_score"] = cosine_similarity(seed_vector, pool[AUDIO_FEATURES].values)[0]
-    pool = pool.sort_values("_score", ascending=False)
 
-pool = pool.sort_values("_score", ascending=False).head(top_n)
+    # Strict mood filter — only songs with similar valence, acousticness, energy
+    strict_pool = pool[
+        (abs(pool["valence"]       - seed_valence)      < 0.15) &
+        (abs(pool["acousticness"]  - seed_acousticness) < 0.20) &
+        (abs(pool["energy"]        - seed_energy)       < 0.20)
+    ]
+
+    # Use strict pool if enough results, else fall back to full pool
+    if len(strict_pool) >= top_n:
+        pool = strict_pool
+    
+    pool = pool.sort_values("_score", ascending=False).head(top_n)
 
     recommendations = pool[[
         "track_name", "artists", "track_genre", "popularity", "language"
