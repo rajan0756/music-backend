@@ -28,7 +28,7 @@ AUDIO_FEATURES = [
 ]
 
 GENRE_GROUPS = {
-    "indian":     ["indian", "bollywood", "desi", "pop-film", "filmi", "carnatic", "hindi"],
+    "indian":     ["indian", "bollywood", "desi", "pop-film", "filmi", "carnatic", "hindi", "punjabi"],
     "pop":        ["pop", "indie-pop", "synth-pop", "power-pop", "electropop"],
     "asian-pop":  ["mandopop", "cantopop", "k-pop", "j-pop", "c-pop"],
     "rock":       ["rock", "alt-rock", "hard-rock", "punk-rock", "indie", "alternative", "metalcore"],
@@ -67,6 +67,18 @@ def get_genre_group(genre):
 
 def get_language(genre_group):
     return LANGUAGE_MAP.get(genre_group, "other")
+INDIAN_ARTISTS = [
+    "ap dhillon", "sidhu", "shubh", "diljit", "arijit", "atif",
+    "jubin", "badshah", "yo yo honey singh", "guru randhawa",
+    "shreya ghoshal", "neha kakkar", "tegi pannu", "manni sandhu"
+]
+
+def fix_language(row):
+    lang = get_language(row["genre_group"])
+    artist = str(row["artists"]).lower()
+    if any(a in artist for a in INDIAN_ARTISTS):
+        return "hindi"
+    return lang
 
 
 # ─────────────────────────────────────────────
@@ -82,7 +94,7 @@ df = df.reset_index(drop=True)
 scaler = MinMaxScaler()
 df[AUDIO_FEATURES] = scaler.fit_transform(df[AUDIO_FEATURES])
 df["genre_group"] = df["track_genre"].apply(get_genre_group)
-df["language"]    = df["genre_group"].apply(get_language)
+df["language"] = df.apply(fix_language, axis=1)
 
 print(f"✅ Dataset ready: {len(df):,} tracks loaded\n")
 
