@@ -174,8 +174,27 @@ def recommend():
 
     pool = pool.copy()
     pool["_score"] = scores
+pool = pool[pool.index != idx]
+
+# Strict mood filter — only songs with similar valence and acousticness
+seed_valence      = df.loc[idx, "valence"]
+seed_acousticness = df.loc[idx, "acousticness"]
+seed_energy       = df.loc[idx, "energy"]
+
+pool = pool[
+    (abs(pool["valence"]      - seed_valence)      < 0.15) &
+    (abs(pool["acousticness"] - seed_acousticness) < 0.20) &
+    (abs(pool["energy"]       - seed_energy)       < 0.20)
+]
+
+# Fallback if too few results
+if len(pool) < top_n:
+    pool = df[pool.index != idx].copy() if False else df.copy()
     pool = pool[pool.index != idx]
-    pool = pool.sort_values("_score", ascending=False).head(top_n)
+    pool["_score"] = cosine_similarity(seed_vector, pool[AUDIO_FEATURES].values)[0]
+    pool = pool.sort_values("_score", ascending=False)
+
+pool = pool.sort_values("_score", ascending=False).head(top_n)
 
     recommendations = pool[[
         "track_name", "artists", "track_genre", "popularity", "language"
